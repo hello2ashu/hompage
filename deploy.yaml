@@ -1,0 +1,19 @@
+services:
+  homepage:
+    container_name: Homepage
+    image: gethomepage/homepage:latest
+    mem_limit: 4g
+    cpu_shares: 768
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      HOMEPAGE_ALLOWED_HOSTS: 192.168.189.40:3550,homepage.ashish-syn-nas.synology.me #You can also add your synology.me DDNS separated by comma like 192.168.1.18:3550,homepage.yourname.synology.me
+      PUID: 1026
+      PGID: 100
+    ports:
+      - 3550:3000
+    volumes:
+      - /volume1/docker/homepage:/app/config:rw
+      - /volume1/docker/homepage/public:/app/public/images:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: on-failure:5
