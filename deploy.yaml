@@ -12,7 +12,8 @@ services:
       PGID: 100
       HOMEPAGE_AUTH_ENABLED: true
       HOMEPAGE_AUTH_SECRET: ${homepagesecret}
-      HOMEPAGE_EXTERNAL_URL: http://homepage.ashish-syn-nas.synology.me
+      HOMEPAGE_EXTERNAL_URL: https://homepage.ashish-syn-nas.synology.me
+      HOMEPAGE_AUTH_PASSWORD: ${homepagepass}
     ports:
       - 3550:3000
     volumes:
