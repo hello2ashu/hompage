@@ -10,6 +10,9 @@ services:
       HOMEPAGE_ALLOWED_HOSTS: 192.168.189.40:3550,homepage.ashish-syn-nas.synology.me #You can also add your synology.me DDNS separated by comma like 192.168.1.18:3550,homepage.yourname.synology.me
       PUID: 1026
       PGID: 100
+      HOMEPAGE_AUTH_ENABLED: true
+      HOMEPAGE_AUTH_SECRET: ${homepagesecret}
+      HOMEPAGE_EXTERNAL_URL=http://homepage.ashish-syn-nas.synology.me
     ports:
       - 3550:3000
     volumes:
