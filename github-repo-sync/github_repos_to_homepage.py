@@ -87,8 +87,8 @@ KNOWN_APP_ICONS = {
     "karakeep": "karakeep.png",
     "linkwarden": "linkwarden.png",
     "bookorbit": "bookorbit.png",
-    "airtrail": "airtrail.png",
-    "trek": "trek.png",
+    "airtrail": "air-trail.png",  # Dashboard Icons uses the hyphenated slug, not "airtrail"
+    "trek": "trek.png",  # not yet in Dashboard Icons as of writing - verification will fall back until it's added
     "trillium": "trilium.png",
     "ntop": "ntopng.png",
     "ntopng": "ntopng.png",
@@ -98,6 +98,7 @@ KNOWN_APP_ICONS = {
     "convertx": "convertx.png",
     "synology": "synology.png",
     "dockhand": "dockhand.png",
+    "syncthing": "syncthing.png",
 }
 
 # gethomepage.dev resolves a bare icon name against Dashboard Icons, and
@@ -218,34 +219,77 @@ def github_fallback_icon(language):
     return f"si-github-#{color}"
 
 
-def verify_or_fallback(candidate, language, skip_verification=False):
-    if skip_verification or candidate.startswith(("http://", "https://", "/icons/")):
-        return candidate  # trusted as configured: verification off, or it's a URL/local icon we can't check
+def _log_confirmed_missing(candidate, source, language):
+    icon_verification_stats["confirmed_missing"] += 1
+    print(f"Icon '{candidate}' not found in {source} - using the GitHub icon instead.", file=sys.stderr)
+    return github_fallback_icon(language)
 
-    if candidate.startswith("mdi-"):
-        status, source = mdi_icon_status(candidate[len("mdi-"):]), "Material Design Icons"
-    elif candidate.startswith("si-"):
-        status, source = simple_icon_status(candidate[len("si-"):]), "Simple Icons"
-    elif candidate.startswith("sh-"):
-        status, source = selfhst_icon_status(candidate[len("sh-"):]), "selfh.st/icons"
-    else:
-        status, source = dashboard_icon_status(candidate), "Dashboard Icons"
 
-    if status is True:
-        return candidate
-
-    if status is False:
-        icon_verification_stats["confirmed_missing"] += 1
-        print(f"Icon '{candidate}' not found in {source} - using the GitHub icon instead.", file=sys.stderr)
-        return github_fallback_icon(language)
-
-    # status is None: inconclusive (see _check_url) - keep the icon as
-    # configured rather than silently downgrading something that might be
-    # perfectly fine, just unreachable in HEAD-check form from here.
+def _log_unverifiable(candidate, source):
     icon_verification_stats["unverifiable"] += 1
     print(f"Warning: couldn't verify icon '{candidate}' against {source} (network issue?) - using it as configured.",
           file=sys.stderr)
     return candidate
+
+
+def verify_or_fallback(candidate, language, skip_verification=False):
+    if skip_verification or candidate.startswith(("http://", "https://", "/icons/")):
+        return candidate  # trusted as configured: verification off, or it's a URL/local icon we can't check
+
+    # An explicit mdi-/si-/sh- pick is a deliberate choice of library, not a
+    # guess - it's checked in place and either kept or replaced with the
+    # generic icon, but never silently moved to a *different* library.
+    if candidate.startswith("mdi-"):
+        status = mdi_icon_status(candidate[len("mdi-"):])
+        source = "Material Design Icons"
+    elif candidate.startswith("si-"):
+        status = simple_icon_status(candidate[len("si-"):])
+        source = "Simple Icons"
+    elif candidate.startswith("sh-"):
+        status = selfhst_icon_status(candidate[len("sh-"):])
+        source = "selfh.st/icons"
+    else:
+        # A bare name (from KNOWN_APP_ICONS or --icon-map) is just a guess
+        # at the Dashboard Icons filename, so a miss there doesn't mean the
+        # app has no icon anywhere - keep searching the other libraries for
+        # the same name before giving up.
+        return search_icon_libraries(candidate, language)
+
+    if status is True:
+        return candidate
+    if status is False:
+        return _log_confirmed_missing(candidate, source, language)
+    return _log_unverifiable(candidate, source)  # status is None: inconclusive, keep as configured
+
+
+def search_icon_libraries(candidate, language):
+    """Look for `candidate`'s app across Dashboard Icons, then Material
+    Design Icons, Simple Icons, and selfh.st/icons in turn, stopping at the
+    first confirmed match. A confirmed miss moves on to the next library; an
+    inconclusive result (network issue) stops the search and keeps the
+    originally configured candidate rather than guessing further."""
+    bare_name, _ext = _split_ext(candidate, DASHBOARD_ICON_EXTS, "png")
+
+    library_chain = [
+        ("Dashboard Icons", lambda: dashboard_icon_status(candidate), lambda: candidate),
+        ("Material Design Icons", lambda: mdi_icon_status(bare_name), lambda: f"mdi-{bare_name}"),
+        ("Simple Icons", lambda: simple_icon_status(bare_name), lambda: f"si-{bare_name}"),
+        ("selfh.st/icons", lambda: selfhst_icon_status(bare_name), lambda: f"sh-{bare_name}"),
+    ]
+
+    tried_sources = []
+    for source, get_status, get_result in library_chain:
+        status = get_status()
+        if status is True:
+            return get_result()
+        if status is None:
+            return _log_unverifiable(candidate, source)
+        tried_sources.append(source)
+
+    icon_verification_stats["confirmed_missing"] += 1
+    print(f"Icon '{candidate}' not found in any of {', '.join(tried_sources)} - using the GitHub icon instead.",
+          file=sys.stderr)
+    return github_fallback_icon(language)
 
 
 def fetch_all_repos(owner, token, is_org, include_forks, include_archived, include_private):
