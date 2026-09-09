@@ -23,7 +23,7 @@ services:
     restart: on-failure:5
   github-repo-sync:
     image: ghcr.io/hello2ashu/github-repo-sync:latest
-    container_name: github-repo-sync
+    container_name: homepage-github-repo-sync
     restart: unless-stopped
     environment:
       GITHUB_USER: hello2ashu
