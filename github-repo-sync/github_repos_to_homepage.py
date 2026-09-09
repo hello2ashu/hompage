@@ -17,7 +17,8 @@ USAGE
         --user hello2ashu \\
         --config /path/to/services.yaml \\
         --group "GitHub Repos" \\
-        --token "$GITHUB_TOKEN"
+        --token "$GITHUB_TOKEN" \\
+        --show-total
 
     # dry run - print the YAML that WOULD be written, don't touch the file
     python3 github_repos_to_homepage.py --user hello2ashu --dry-run
@@ -36,6 +37,7 @@ want private repos included too (and pass --include-private).
 
 import argparse
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -73,6 +75,13 @@ LANGUAGE_COLORS = {
 # glance since you likely already recognize these icons from elsewhere on
 # your dashboard. Repo name matching is case-insensitive. Override or add
 # to this via --icon-map for anything not covered here.
+#
+# NOTE: this is a static guess at what exists in the Dashboard Icons
+# project. Names there do change (renames, removals, new additions), so
+# every candidate pulled from this map (or from --icon-map) is verified
+# against the live CDN before use - see verify_or_fallback() below. If
+# verification fails for any reason, it falls back to the colored GitHub
+# icon rather than risking a broken image on the dashboard.
 KNOWN_APP_ICONS = {
     "dawarich": "dawarich.png",
     "karakeep": "karakeep.png",
@@ -90,6 +99,111 @@ KNOWN_APP_ICONS = {
     "synology": "synology.png",
     "dockhand": "dockhand.png",
 }
+
+# gethomepage.dev resolves a bare icon name against Dashboard Icons, and
+# recognizes three prefixed icon libraries on top of that - see
+# https://gethomepage.dev/configs/services/#icons. Each has its own CDN and
+# its own naming convention, so each gets its own existence check below
+# rather than being trusted blindly. A candidate that isn't in any of
+# these forms (a full URL, or a local /icons/... path) can't be verified
+# from here and is used as-is.
+DASHBOARD_ICON_CDN_BASES = [
+    "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons",  # current
+    "https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons",  # legacy mirror, in case of a lookup lag
+]
+MDI_ICON_URL = "https://cdn.jsdelivr.net/npm/@mdi/svg@latest/svg/{name}.svg"
+SIMPLE_ICONS_URL = "https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/{name}.svg"
+SELFHST_ICON_CDN_BASE = "https://cdn.jsdelivr.net/gh/selfhst/icons"
+
+ICON_CHECK_TIMEOUT = 5
+DASHBOARD_ICON_EXTS = ("png", "svg", "webp")  # gethomepage.dev defaults to png when none is given
+SELFHST_ICON_EXTS = ("png", "svg", "webp")  # selfh.st also defaults to png when none is given
+
+# mdi-XX and si-XX accept a "-#hexcolor" color-override suffix; strip it
+# before checking the icon name itself against its source library.
+_COLOR_SUFFIX_RE = re.compile(r"-#[0-9a-fA-F]{3,8}$")
+
+_icon_exists_cache = {}
+_icon_session = requests.Session()
+
+
+def _url_exists(url):
+    try:
+        resp = _icon_session.head(url, timeout=ICON_CHECK_TIMEOUT, allow_redirects=True)
+        return resp.status_code == 200
+    except requests.RequestException:
+        return False  # network hiccup or CDN move - treat as "couldn't verify"
+
+
+def _cached(cache_key, check_fn):
+    if cache_key in _icon_exists_cache:
+        return _icon_exists_cache[cache_key]
+    result = check_fn()
+    _icon_exists_cache[cache_key] = result
+    return result
+
+
+def _split_ext(name, valid_exts, default_ext):
+    """Split a trailing '.ext' off `name` if it's one of `valid_exts`;
+    otherwise return `name` unchanged along with `default_ext` (matching
+    what the dashboard would actually fetch when no extension is given)."""
+    lower = name.lower()
+    for ext in valid_exts:
+        suffix = "." + ext
+        if lower.endswith(suffix):
+            return name[: -len(suffix)], ext
+    return name, default_ext
+
+
+def dashboard_icon_exists(candidate):
+    bare_name, ext = _split_ext(candidate, DASHBOARD_ICON_EXTS, "png")
+
+    def check():
+        for cdn_base in DASHBOARD_ICON_CDN_BASES:
+            if _url_exists(f"{cdn_base}/{ext}/{bare_name}.{ext}"):
+                return True
+        return False
+
+    return _cached(("dashboard", bare_name, ext), check)
+
+
+def mdi_icon_exists(name):
+    name = _COLOR_SUFFIX_RE.sub("", name)
+    return _cached(("mdi", name), lambda: _url_exists(MDI_ICON_URL.format(name=name)))
+
+
+def simple_icon_exists(name):
+    name = _COLOR_SUFFIX_RE.sub("", name)
+    return _cached(("si", name), lambda: _url_exists(SIMPLE_ICONS_URL.format(name=name)))
+
+
+def selfhst_icon_exists(candidate):
+    bare_name, ext = _split_ext(candidate, SELFHST_ICON_EXTS, "png")
+    return _cached(("sh", bare_name, ext), lambda: _url_exists(f"{SELFHST_ICON_CDN_BASE}/{ext}/{bare_name}.{ext}"))
+
+
+def github_fallback_icon(language):
+    """The always-valid fallback: GitHub's own simple-icons logo, tinted by
+    the repo's primary language so repos are still visually distinguishable
+    even without an app-specific icon."""
+    color = LANGUAGE_COLORS.get(language, "181717")  # 181717 = GitHub's own black
+    return f"si-github-#{color}"
+
+
+def verify_or_fallback(candidate, language):
+    if candidate.startswith(("http://", "https://", "/icons/")):
+        return candidate  # can't (or shouldn't) verify a URL or a local icon from here
+
+    if candidate.startswith("mdi-"):
+        verified = mdi_icon_exists(candidate[len("mdi-"):])
+    elif candidate.startswith("si-"):
+        verified = simple_icon_exists(candidate[len("si-"):])
+    elif candidate.startswith("sh-"):
+        verified = selfhst_icon_exists(candidate[len("sh-"):])
+    else:
+        verified = dashboard_icon_exists(candidate)
+
+    return candidate if verified else github_fallback_icon(language)
 
 
 def fetch_all_repos(owner, token, is_org, include_forks, include_archived, include_private):
@@ -151,17 +265,18 @@ def sort_repos(repos, sort_by):
 
 def resolve_icon(repo_name, language, icon_overrides):
     """Icon resolution order: user's --icon-map override > known self-hosted
-    app icon (matched by repo name) > language-colored GitHub icon."""
+    app icon (matched by repo name) > language-colored GitHub icon. Any
+    candidate pulled from the first two is verified against the live
+    Dashboard Icons CDN before use (see verify_or_fallback)."""
     name_lower = repo_name.lower()
 
     if icon_overrides and name_lower in icon_overrides:
-        return icon_overrides[name_lower]
+        return verify_or_fallback(icon_overrides[name_lower], language)
 
     if name_lower in KNOWN_APP_ICONS:
-        return KNOWN_APP_ICONS[name_lower]
+        return verify_or_fallback(KNOWN_APP_ICONS[name_lower], language)
 
-    color = LANGUAGE_COLORS.get(language, "181717")  # 181717 = GitHub's own black
-    return f"si-github-#{color}"
+    return github_fallback_icon(language)
 
 
 def build_entry(repo, show_stars, icon_overrides=None):
@@ -177,6 +292,21 @@ def build_entry(repo, show_stars, icon_overrides=None):
     attrs["description"] = description
     attrs["icon"] = icon
     return {repo["name"]: attrs}
+
+
+def build_total_entry(user, total_count, shown_count):
+    """A non-clickable-in-spirit summary entry placed at the top of the
+    group so the total repo count is visible on the dashboard at a glance."""
+    if shown_count < total_count:
+        label = f"\U0001F4E6 Showing {shown_count} of {total_count} Repos"
+    else:
+        label = f"\U0001F4E6 {total_count} Repos"
+
+    attrs = CommentedMap()
+    attrs["href"] = f"https://github.com/{user}"
+    attrs["description"] = "Total repositories synced from GitHub"
+    attrs["icon"] = "si-github-#181717"
+    return {label: attrs}
 
 
 def load_or_create_config(path):
@@ -246,6 +376,9 @@ def main():
     p.add_argument("--include-archived", action="store_true", help="Include archived repos (excluded by default)")
     p.add_argument("--include-private", action="store_true", help="Include private repos (requires a token with 'repo' scope)")
     p.add_argument("--show-stars", action="store_true", help="Append star count to each repo's description")
+    p.add_argument("--show-total", action="store_true",
+                    help="Add a summary entry at the top of the group showing the total repo count "
+                         "(and how many are shown, if --limit truncated the list)")
     p.add_argument("--icon-map", default=None,
                     help="Path to a JSON or YAML file of {repo_name: icon} overrides, applied on top of the "
                          "built-in known-app icons. Repo name matching is case-insensitive.")
@@ -275,6 +408,8 @@ def main():
         include_private=args.include_private,
     )
     repos = sort_repos(repos, args.sort)
+
+    total_count = len(repos)  # before --limit clips the visible list
     if args.limit:
         repos = repos[: args.limit]
 
@@ -283,6 +418,9 @@ def main():
         sys.exit(1)
 
     entries = [build_entry(r, args.show_stars, icon_overrides) for r in repos]
+
+    if args.show_total:
+        entries.insert(0, build_total_entry(args.user, total_count, len(repos)))
 
     config_dir = os.path.dirname(os.path.abspath(args.config)) or "."
     if not os.path.isdir(config_dir):
@@ -309,7 +447,8 @@ def main():
     os.replace(tmp_path, args.config)
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    print(f"[{ts}] Wrote {len(entries)} repo(s) to group '{args.group}' in {args.config}")
+    print(f"[{ts}] Wrote {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
+          f"({total_count} repo(s) total) to group '{args.group}' in {args.config}")
 
 
 if __name__ == "__main__":
