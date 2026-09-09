@@ -48,8 +48,10 @@ jobs:
       - name: Notify Dockhand
         if: success()
         run: |
-          curl -X POST "${{ secrets.DOCKHAND_WEBHOOK_URL }}" \
+          curl --fail-with-body -X POST \
+            "${{ secrets.DOCKHAND_WEBHOOK_URL }}" \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.DOCKHAND_WEBHOOK_SECRET }}" \
             -d '{
               "image": "ghcr.io/${{ github.repository_owner }}/github-repo-sync:latest",
               "tag": "latest",
