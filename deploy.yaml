@@ -29,7 +29,7 @@ services:
       GITHUB_USER: hello2ashu
       HOMEPAGE_GROUP: "Repo List"
       HOMEPAGE_CONFIG: /config/services.yaml   # path INSIDE the container - see volume mount below
-      GITHUB_TOKEN: ${GITHUB_TOKEN}             # put your NEW rotated token in .env, not the leaked one
+      GITHUB_TOKEN: ${github_pat}             # put your NEW rotated token in .env, not the leaked one
       SYNC_INTERVAL_SECS: "3600"                # 1 hour - adjust as you like
     volumes:
       # Mount the SAME services.yaml Homepage itself reads/writes, so this
