@@ -31,6 +31,9 @@ services:
       HOMEPAGE_CONFIG: /config/services.yaml   # path INSIDE the container - see volume mount below
       GITHUB_TOKEN: ${github_pat}             # put your NEW rotated token in .env, not the leaked one
       SYNC_INTERVAL_SECS: "3600"                # 1 hour - adjust as you like
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
+      PUID: 1026                                # matches Homepage's PUID so file ownership stays consistent
+      PGID: 100                                 # matches Homepage's PGID
     volumes:
       # Mount the SAME services.yaml Homepage itself reads/writes, so this
       # container's changes show up on the dashboard immediately.
