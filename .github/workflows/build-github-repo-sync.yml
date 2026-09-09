@@ -6,7 +6,7 @@ on:
     paths:
       - "github-repo-sync/**"
       - ".github/workflows/build-github-repo-sync.yml"
-  workflow_dispatch: {}   # lets you trigger a rebuild manually from the Actions tab
+  workflow_dispatch: {}
 
 env:
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/github-repo-sync
@@ -14,9 +14,10 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
-      packages: write   # required to push to GHCR
+      packages: write
 
     steps:
       - name: Checkout
@@ -27,7 +28,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}   # auto-provided by Actions, no setup needed
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -43,3 +44,14 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Notify Dockhand
+        if: success()
+        run: |
+          curl -X POST "${{ secrets.DOCKHAND_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "image": "ghcr.io/${{ github.repository_owner }}/github-repo-sync:latest",
+              "tag": "latest",
+              "commit": "${{ github.sha }}"
+            }'
