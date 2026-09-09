@@ -21,3 +21,18 @@ services:
       - /volume1/docker/homepage/public:/app/public/images:rw
       - /var/run/docker.sock:/var/run/docker.sock
     restart: on-failure:5
+  github-repo-sync:
+    image: ghcr.io/hello2ashu/github-repo-sync:latest
+    container_name: github-repo-sync
+    restart: unless-stopped
+    environment:
+      GITHUB_USER: hello2ashu
+      HOMEPAGE_GROUP: "Repo List"
+      HOMEPAGE_CONFIG: /config/services.yaml   # path INSIDE the container - see volume mount below
+      GITHUB_TOKEN: ${GITHUB_TOKEN}             # put your NEW rotated token in .env, not the leaked one
+      SYNC_INTERVAL_SECS: "3600"                # 1 hour - adjust as you like
+    volumes:
+      # Mount the SAME services.yaml Homepage itself reads/writes, so this
+      # container's changes show up on the dashboard immediately.
+      # Replace the left side with the real host path to your services.yaml.
+      - /volume1/docker/homepage/services.yaml:/config/services.yaml
