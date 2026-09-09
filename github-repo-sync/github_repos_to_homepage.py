@@ -126,13 +126,36 @@ _COLOR_SUFFIX_RE = re.compile(r"-#[0-9a-fA-F]{3,8}$")
 _icon_exists_cache = {}
 _icon_session = requests.Session()
 
+# Running tally so main() can report, at the end of a run, how many icons
+# were actually swapped for the fallback vs. how many merely couldn't be
+# checked - the two have very different implications and were previously
+# indistinguishable (see _check_url's docstring for why that mattered).
+icon_verification_stats = {"confirmed_missing": 0, "unverifiable": 0}
 
-def _url_exists(url):
+
+def _check_url(url):
+    """Returns True (confirmed 200), False (confirmed 404), or None
+    (inconclusive: timeout, connection error, or any other status code
+    such as a 403/429 from an over-eager CDN).
+
+    The None case matters: this check runs on whatever machine generates
+    the YAML (often a NAS or a locked-down home server on a cron job),
+    which may have very different outbound network access than the
+    browser that actually renders the dashboard. Collapsing "couldn't
+    reach the CDN from here" into "the icon doesn't exist" was the bug
+    that made perfectly good icons disappear in restricted environments -
+    see verify_or_fallback, which now only swaps an icon out for the
+    fallback on a real, confirmed 404.
+    """
     try:
         resp = _icon_session.head(url, timeout=ICON_CHECK_TIMEOUT, allow_redirects=True)
-        return resp.status_code == 200
     except requests.RequestException:
-        return False  # network hiccup or CDN move - treat as "couldn't verify"
+        return None
+    if resp.status_code == 200:
+        return True
+    if resp.status_code == 404:
+        return False
+    return None
 
 
 def _cached(cache_key, check_fn):
@@ -155,31 +178,36 @@ def _split_ext(name, valid_exts, default_ext):
     return name, default_ext
 
 
-def dashboard_icon_exists(candidate):
-    bare_name, ext = _split_ext(candidate, DASHBOARD_ICON_EXTS, "png")
-
-    def check():
-        for cdn_base in DASHBOARD_ICON_CDN_BASES:
-            if _url_exists(f"{cdn_base}/{ext}/{bare_name}.{ext}"):
-                return True
+def _combine(results):
+    """Combine several tri-state checks (e.g. two CDN mirrors) into one:
+    any confirmed hit wins; only call it missing if every check came back
+    a confirmed 404; otherwise it's inconclusive."""
+    if True in results:
+        return True
+    if results and all(r is False for r in results):
         return False
+    return None
 
+
+def dashboard_icon_status(candidate):
+    bare_name, ext = _split_ext(candidate, DASHBOARD_ICON_EXTS, "png")
+    check = lambda: _combine([_check_url(f"{base}/{ext}/{bare_name}.{ext}") for base in DASHBOARD_ICON_CDN_BASES])
     return _cached(("dashboard", bare_name, ext), check)
 
 
-def mdi_icon_exists(name):
+def mdi_icon_status(name):
     name = _COLOR_SUFFIX_RE.sub("", name)
-    return _cached(("mdi", name), lambda: _url_exists(MDI_ICON_URL.format(name=name)))
+    return _cached(("mdi", name), lambda: _check_url(MDI_ICON_URL.format(name=name)))
 
 
-def simple_icon_exists(name):
+def simple_icon_status(name):
     name = _COLOR_SUFFIX_RE.sub("", name)
-    return _cached(("si", name), lambda: _url_exists(SIMPLE_ICONS_URL.format(name=name)))
+    return _cached(("si", name), lambda: _check_url(SIMPLE_ICONS_URL.format(name=name)))
 
 
-def selfhst_icon_exists(candidate):
+def selfhst_icon_status(candidate):
     bare_name, ext = _split_ext(candidate, SELFHST_ICON_EXTS, "png")
-    return _cached(("sh", bare_name, ext), lambda: _url_exists(f"{SELFHST_ICON_CDN_BASE}/{ext}/{bare_name}.{ext}"))
+    return _cached(("sh", bare_name, ext), lambda: _check_url(f"{SELFHST_ICON_CDN_BASE}/{ext}/{bare_name}.{ext}"))
 
 
 def github_fallback_icon(language):
@@ -190,20 +218,34 @@ def github_fallback_icon(language):
     return f"si-github-#{color}"
 
 
-def verify_or_fallback(candidate, language):
-    if candidate.startswith(("http://", "https://", "/icons/")):
-        return candidate  # can't (or shouldn't) verify a URL or a local icon from here
+def verify_or_fallback(candidate, language, skip_verification=False):
+    if skip_verification or candidate.startswith(("http://", "https://", "/icons/")):
+        return candidate  # trusted as configured: verification off, or it's a URL/local icon we can't check
 
     if candidate.startswith("mdi-"):
-        verified = mdi_icon_exists(candidate[len("mdi-"):])
+        status, source = mdi_icon_status(candidate[len("mdi-"):]), "Material Design Icons"
     elif candidate.startswith("si-"):
-        verified = simple_icon_exists(candidate[len("si-"):])
+        status, source = simple_icon_status(candidate[len("si-"):]), "Simple Icons"
     elif candidate.startswith("sh-"):
-        verified = selfhst_icon_exists(candidate[len("sh-"):])
+        status, source = selfhst_icon_status(candidate[len("sh-"):]), "selfh.st/icons"
     else:
-        verified = dashboard_icon_exists(candidate)
+        status, source = dashboard_icon_status(candidate), "Dashboard Icons"
 
-    return candidate if verified else github_fallback_icon(language)
+    if status is True:
+        return candidate
+
+    if status is False:
+        icon_verification_stats["confirmed_missing"] += 1
+        print(f"Icon '{candidate}' not found in {source} - using the GitHub icon instead.", file=sys.stderr)
+        return github_fallback_icon(language)
+
+    # status is None: inconclusive (see _check_url) - keep the icon as
+    # configured rather than silently downgrading something that might be
+    # perfectly fine, just unreachable in HEAD-check form from here.
+    icon_verification_stats["unverifiable"] += 1
+    print(f"Warning: couldn't verify icon '{candidate}' against {source} (network issue?) - using it as configured.",
+          file=sys.stderr)
+    return candidate
 
 
 def fetch_all_repos(owner, token, is_org, include_forks, include_archived, include_private):
@@ -263,29 +305,29 @@ def sort_repos(repos, sort_by):
     return repos
 
 
-def resolve_icon(repo_name, language, icon_overrides):
+def resolve_icon(repo_name, language, icon_overrides, skip_verification=False):
     """Icon resolution order: user's --icon-map override > known self-hosted
     app icon (matched by repo name) > language-colored GitHub icon. Any
-    candidate pulled from the first two is verified against the live
-    Dashboard Icons CDN before use (see verify_or_fallback)."""
+    candidate pulled from the first two is verified against its source's
+    live CDN before use (see verify_or_fallback)."""
     name_lower = repo_name.lower()
 
     if icon_overrides and name_lower in icon_overrides:
-        return verify_or_fallback(icon_overrides[name_lower], language)
+        return verify_or_fallback(icon_overrides[name_lower], language, skip_verification)
 
     if name_lower in KNOWN_APP_ICONS:
-        return verify_or_fallback(KNOWN_APP_ICONS[name_lower], language)
+        return verify_or_fallback(KNOWN_APP_ICONS[name_lower], language, skip_verification)
 
     return github_fallback_icon(language)
 
 
-def build_entry(repo, show_stars, icon_overrides=None):
+def build_entry(repo, show_stars, icon_overrides=None, skip_icon_verification=False):
     description = repo.get("description") or "No description"
     if show_stars:
         stars = repo.get("stargazers_count", 0)
         description = f"{description} · \u2605 {stars}"
 
-    icon = resolve_icon(repo["name"], repo.get("language"), icon_overrides)
+    icon = resolve_icon(repo["name"], repo.get("language"), icon_overrides, skip_icon_verification)
 
     attrs = CommentedMap()
     attrs["href"] = repo["html_url"]
@@ -382,6 +424,11 @@ def main():
     p.add_argument("--icon-map", default=None,
                     help="Path to a JSON or YAML file of {repo_name: icon} overrides, applied on top of the "
                          "built-in known-app icons. Repo name matching is case-insensitive.")
+    p.add_argument("--skip-icon-verification", action="store_true",
+                    help="Don't check known-app / --icon-map icons against their source CDN before use "
+                         "(Dashboard Icons, Material Design Icons, Simple Icons, selfh.st/icons). Use this if "
+                         "the machine running this script can't reach those CDNs but your browser can - "
+                         "otherwise every icon will look 'missing' here even though it would render fine.")
     p.add_argument("--dry-run", action="store_true", help="Print the resulting YAML instead of writing to --config")
     args = p.parse_args()
 
@@ -417,10 +464,21 @@ def main():
         print("No repositories found matching the given filters — leaving config untouched.", file=sys.stderr)
         sys.exit(1)
 
-    entries = [build_entry(r, args.show_stars, icon_overrides) for r in repos]
+    entries = [build_entry(r, args.show_stars, icon_overrides, args.skip_icon_verification) for r in repos]
 
     if args.show_total:
         entries.insert(0, build_total_entry(args.user, total_count, len(repos)))
+
+    if not args.skip_icon_verification:
+        missing = icon_verification_stats["confirmed_missing"]
+        unverifiable = icon_verification_stats["unverifiable"]
+        if missing:
+            print(f"{missing} icon(s) confirmed missing from their source and replaced with the GitHub icon "
+                  f"(see warnings above).", file=sys.stderr)
+        if unverifiable:
+            print(f"{unverifiable} icon(s) couldn't be verified due to a network issue and were used as "
+                  f"configured (see warnings above). If this happens every run, this machine likely can't "
+                  f"reach the icon CDNs — try --skip-icon-verification.", file=sys.stderr)
 
     config_dir = os.path.dirname(os.path.abspath(args.config)) or "."
     if not os.path.isdir(config_dir):
