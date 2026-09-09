@@ -38,4 +38,4 @@ services:
       # Mount the SAME services.yaml Homepage itself reads/writes, so this
       # container's changes show up on the dashboard immediately.
       # Replace the left side with the real host path to your services.yaml.
-      - /volume1/docker/homepage:/config/services.yaml
+      - /volume1/docker/homepage:/config
