@@ -14,7 +14,7 @@ services:
       HOMEPAGE_AUTH_SECRET: ${homepagesecret}
       HOMEPAGE_EXTERNAL_URL: https://homepage.ashish-syn-nas.synology.me
       HOMEPAGE_AUTH_PASSWORD: ${homepagepass}
-      - TZ=America/Los_Angeles
+      TZ: America/Los_Angeles
     ports:
       - 3550:3000
     volumes:
@@ -35,7 +35,7 @@ services:
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
       PUID: 1026                                # matches Homepage's PUID so file ownership stays consistent
       PGID: 100                                 # matches Homepage's PGID
-      - TZ=America/Los_Angeles
+      TZ: America/Los_Angeles
     volumes:
       # Mount the SAME services.yaml Homepage itself reads/writes, so this
       # container's changes show up on the dashboard immediately.
