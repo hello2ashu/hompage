@@ -1,4 +1,4 @@
-```yaml
+
 services:
   homepage:
     container_name: Homepage
