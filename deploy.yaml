@@ -1,3 +1,4 @@
+```yaml
 services:
   homepage:
     container_name: Homepage
@@ -6,8 +7,9 @@ services:
     cpu_shares: 768
     security_opt:
       - no-new-privileges:true
+
     environment:
-      HOMEPAGE_ALLOWED_HOSTS: 192.168.189.40:3550,homepage.ashish-syn-nas.synology.me #You can also add your synology.me DDNS separated by comma like 192.168.1.18:3550,homepage.yourname.synology.me
+      HOMEPAGE_ALLOWED_HOSTS: 192.168.189.40:3550,homepage.ashish-syn-nas.synology.me
       PUID: 1026
       PGID: 100
       HOMEPAGE_AUTH_ENABLED: true
@@ -15,29 +17,41 @@ services:
       HOMEPAGE_EXTERNAL_URL: https://homepage.ashish-syn-nas.synology.me
       HOMEPAGE_AUTH_PASSWORD: ${homepagepass}
       TZ: America/Los_Angeles
+
     ports:
       - 3550:3000
+
     volumes:
       - /volume1/docker/homepage:/app/config:rw
       - /volume1/docker/homepage/public:/app/public/images:rw
       - /var/run/docker.sock:/var/run/docker.sock
+
     restart: on-failure:5
+
+    networks:
+      - default
+      - bookorbit-deploy_default
+
   github-repo-sync:
     image: ghcr.io/hello2ashu/github-repo-sync:latest
     container_name: homepage-github-repo-sync
     restart: unless-stopped
+
     environment:
       GITHUB_USER: hello2ashu
       HOMEPAGE_GROUP: "Repo List"
-      HOMEPAGE_CONFIG: /config/services.yaml   # path INSIDE the container - see volume mount below
-      GITHUB_TOKEN: ${github_pat}             # put your NEW rotated token in .env, not the leaked one
-      SYNC_INTERVAL_SECS: "3600"                # 1 hour - adjust as you like
+      HOMEPAGE_CONFIG: /config/services.yaml
+      GITHUB_TOKEN: ${github_pat}
+      SYNC_INTERVAL_SECS: "3600"
       GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET}
-      PUID: 1026                                # matches Homepage's PUID so file ownership stays consistent
-      PGID: 100                                 # matches Homepage's PGID
+      PUID: 1026
+      PGID: 100
       TZ: America/Los_Angeles
+
     volumes:
-      # Mount the SAME services.yaml Homepage itself reads/writes, so this
-      # container's changes show up on the dashboard immediately.
-      # Replace the left side with the real host path to your services.yaml.
       - /volume1/docker/homepage:/config
+
+networks:
+  bookorbit-deploy_default:
+    external: true
+```
