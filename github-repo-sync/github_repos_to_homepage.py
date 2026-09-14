@@ -521,6 +521,17 @@ def upsert_group(data, group_name, entries):
     return data
 
 
+def remove_group(data, group_name):
+    """Remove a top-level {group_name: [...]} entry if present. Used to
+    clean up the old flat group left over from before repos were split into
+    Deployed/Undeployed groups."""
+    for i, item in enumerate(data):
+        if isinstance(item, dict) and group_name in item:
+            del data[i]
+            return data, True
+    return data, False
+
+
 def load_name_map(path, flag_name, value_desc):
     """Load a flat {key: value} JSON/YAML mapping file, lowercasing keys.
     Used for both --icon-map (repo -> icon) and --stack-alias-map
@@ -571,9 +582,9 @@ def main():
     p.add_argument("--dry-run", action="store_true", help="Print the resulting YAML instead of writing to --config")
     p.add_argument("--dockhand-url", default=os.environ.get("DOCKHAND_URL"),
                     help="Base URL of your Dockhand instance, e.g. https://dockhand.example.com "
-                         "(or set DOCKHAND_URL env var). When set, repos are split into two groups - "
-                         "one for repos registered as a git repository in Dockhand (deployed), one for "
-                         "repos that aren't (undeployed) - instead of a single --group.")
+                         "(or set DOCKHAND_URL env var). Required: repos are always split into two "
+                         "groups - '{group} - Deployed' for repos registered as a git repository in "
+                         "Dockhand, '{group} - Undeployed' for repos that aren't.")
     p.add_argument("--dockhand-token", default=os.environ.get("DOCKHAND_TOKEN"),
                     help="Dockhand API token (or set DOCKHAND_TOKEN env var)")
     p.add_argument("--dockhand-repos-path", default=os.environ.get("DOCKHAND_REPOS_PATH", "/api/git/repositories"),
@@ -622,43 +633,42 @@ def main():
         print("No repositories found matching the given filters — leaving config untouched.", file=sys.stderr)
         sys.exit(1)
 
-    use_dockhand = bool(args.dockhand_url)
+    if not args.dockhand_url:
+        print(
+            "ERROR: --dockhand-url (or DOCKHAND_URL env var) is required. Repos are always split into "
+            "Deployed/Undeployed groups based on Dockhand, so there's no flat-list mode anymore.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
-    if use_dockhand:
-        deployed_urls = fetch_dockhand_git_repo_urls(args.dockhand_url, args.dockhand_token, args.dockhand_repos_path)
+    deployed_urls = fetch_dockhand_git_repo_urls(args.dockhand_url, args.dockhand_token, args.dockhand_repos_path)
 
-        deployed_repos, undeployed_repos = [], []
-        for r in repos:
-            bucket = deployed_repos if repo_is_deployed(r, deployed_urls, url_alias_map) else undeployed_repos
-            bucket.append(r)
+    deployed_repos, undeployed_repos = [], []
+    for r in repos:
+        bucket = deployed_repos if repo_is_deployed(r, deployed_urls, url_alias_map) else undeployed_repos
+        bucket.append(r)
 
-        unmatched = deployed_urls - {normalize_repo_url(r["html_url"]) for r in deployed_repos}
-        if unmatched:
-            print(
-                f"Note: {len(unmatched)} Dockhand git repositor{'y' if len(unmatched) == 1 else 'ies'} "
-                f"didn't match any of your GitHub repos ({', '.join(sorted(unmatched))}) - likely a "
-                f"private/forked/renamed repo not visible with the current --user/--token/--include-* flags.",
-                file=sys.stderr,
-            )
+    unmatched = deployed_urls - {normalize_repo_url(r["html_url"]) for r in deployed_repos}
+    if unmatched:
+        print(
+            f"Note: {len(unmatched)} Dockhand git repositor{'y' if len(unmatched) == 1 else 'ies'} "
+            f"didn't match any of your GitHub repos ({', '.join(sorted(unmatched))}) - likely a "
+            f"private/forked/renamed repo not visible with the current --user/--token/--include-* flags.",
+            file=sys.stderr,
+        )
 
-        deployed_entries = [
-            build_entry(r, args.show_stars, icon_overrides, args.skip_icon_verification, status_label="\U0001F7E2")
-            for r in deployed_repos
-        ]
-        undeployed_entries = [
-            build_entry(r, args.show_stars, icon_overrides, args.skip_icon_verification, status_label="\U0001F534")
-            for r in undeployed_repos
-        ]
+    deployed_entries = [
+        build_entry(r, args.show_stars, icon_overrides, args.skip_icon_verification, status_label="\U0001F7E2")
+        for r in deployed_repos
+    ]
+    undeployed_entries = [
+        build_entry(r, args.show_stars, icon_overrides, args.skip_icon_verification, status_label="\U0001F534")
+        for r in undeployed_repos
+    ]
 
-        if args.show_total:
-            deployed_entries.insert(0, build_total_entry(args.user, len(deployed_repos), len(deployed_repos)))
-            undeployed_entries.insert(0, build_total_entry(args.user, len(undeployed_repos), len(undeployed_repos)))
-
-        entries = deployed_entries + undeployed_entries  # only used for the "no repos" guard below
-    else:
-        entries = [build_entry(r, args.show_stars, icon_overrides, args.skip_icon_verification) for r in repos]
-        if args.show_total:
-            entries.insert(0, build_total_entry(args.user, total_count, len(repos)))
+    if args.show_total:
+        deployed_entries.insert(0, build_total_entry(args.user, len(deployed_repos), len(deployed_repos)))
+        undeployed_entries.insert(0, build_total_entry(args.user, len(undeployed_repos), len(undeployed_repos)))
 
     if not args.skip_icon_verification:
         missing = icon_verification_stats["confirmed_missing"]
@@ -683,13 +693,14 @@ def main():
 
     yaml, data = load_or_create_config(args.config)
 
-    if use_dockhand:
-        deployed_group = args.group + args.deployed_suffix
-        undeployed_group = args.group + args.undeployed_suffix
-        data = upsert_group(data, deployed_group, deployed_entries)
-        data = upsert_group(data, undeployed_group, undeployed_entries)
-    else:
-        data = upsert_group(data, args.group, entries)
+    deployed_group = args.group + args.deployed_suffix
+    undeployed_group = args.group + args.undeployed_suffix
+    data = upsert_group(data, deployed_group, deployed_entries)
+    data = upsert_group(data, undeployed_group, undeployed_entries)
+
+    # Clean up the old flat group (plain --group, e.g. "Repo List") left
+    # over from before repos were split into Deployed/Undeployed groups.
+    data, removed_stale = remove_group(data, args.group)
 
     if args.dry_run:
         yaml.dump(data, sys.stdout)
@@ -703,13 +714,10 @@ def main():
     os.replace(tmp_path, args.config)
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    if use_dockhand:
-        print(f"[{ts}] Wrote {len(deployed_entries)} deployed / {len(undeployed_entries)} undeployed "
-              f"repo(s) ({total_count} repo(s) total) to groups '{deployed_group}' / '{undeployed_group}' "
-              f"in {args.config}")
-    else:
-        print(f"[{ts}] Wrote {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
-              f"({total_count} repo(s) total) to group '{args.group}' in {args.config}")
+    stale_note = f" (removed stale flat group '{args.group}')" if removed_stale else ""
+    print(f"[{ts}] Wrote {len(deployed_entries)} deployed / {len(undeployed_entries)} undeployed "
+          f"repo(s) ({total_count} repo(s) total) to groups '{deployed_group}' / '{undeployed_group}' "
+          f"in {args.config}{stale_note}")
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ set -eu
 : "${GITHUB_USER:?GITHUB_USER env var is required}"
 : "${HOMEPAGE_CONFIG:?HOMEPAGE_CONFIG env var is required}"
 : "${HOMEPAGE_GROUP:?HOMEPAGE_GROUP env var is required}"
+: "${DOCKHAND_URL:?DOCKHAND_URL env var is required - repos are always split into Deployed/Undeployed groups}"
 
 if [ -n "${PUID:-}" ] && [ -n "${PGID:-}" ] && command -v su-exec >/dev/null 2>&1; then
     echo "Running as PUID=${PUID} PGID=${PGID}"

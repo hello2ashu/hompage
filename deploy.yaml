@@ -1,5 +1,6 @@
 
-services:
+
+    services:
   homepage:
     container_name: Homepage
     image: gethomepage/homepage:latest
