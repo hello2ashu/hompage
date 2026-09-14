@@ -498,7 +498,7 @@ def load_or_create_config(path):
     # disables wrapping in practice.
     yaml.width = 100000
     if os.path.exists(path):
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = yaml.load(f)
         if data is None:
             data = CommentedSeq()
@@ -544,7 +544,7 @@ def load_name_map(path, flag_name, value_desc):
         sys.exit(1)
 
     yaml = YAML(typ="safe")
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         raw = yaml.load(f) or {}
 
     if not isinstance(raw, dict):
@@ -714,7 +714,7 @@ def main():
     # Write atomically: build in a temp file, then replace, so a crashed
     # run never leaves services.yaml half-written.
     tmp_path = args.config + ".tmp"
-    with open(tmp_path, "w") as f:
+    with open(tmp_path, "w", encoding="utf-8") as f:
         yaml.dump(data, f)
     os.replace(tmp_path, args.config)
 
@@ -735,7 +735,7 @@ def main():
         "updated_at": ts,
     }
     stats_tmp = stats_path + ".tmp"
-    with open(stats_tmp, "w") as f:
+    with open(stats_tmp, "w", encoding="utf-8") as f:
         json.dump(stats, f)
     os.replace(stats_tmp, stats_path)
 
