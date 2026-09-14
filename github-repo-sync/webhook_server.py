@@ -20,6 +20,23 @@ Optional env vars:
   GITHUB_WEBHOOK_SECRET   Shared secret configured on the GitHub App's webhook.
                           Strongly recommended - without it, anyone who finds
                           the URL can trigger a sync (low risk, but still).
+
+  DOCKHAND_URL            Base URL of your Dockhand instance, e.g.
+                          https://dockhand.example.com. When set, repos are
+                          split into two Homepage groups - "{HOMEPAGE_GROUP}
+                          - Deployed" and "{HOMEPAGE_GROUP} - Undeployed" -
+                          based on whether each repo is registered as a git
+                          repository in Dockhand, instead of one flat
+                          HOMEPAGE_GROUP.
+  DOCKHAND_TOKEN          Dockhand API token
+  DOCKHAND_REPOS_PATH     API path appended to DOCKHAND_URL returning
+                          Dockhand's registered git repositories (default:
+                          /api/git/repositories)
+  DOCKHAND_URL_ALIAS_MAP  Path to a {repo_name: git_url} JSON/YAML file for
+                          repos whose current GitHub URL differs from what's
+                          registered in Dockhand (e.g. after a rename)
+  DEPLOYED_SUFFIX         Suffix for the deployed group (default: " - Deployed")
+  UNDEPLOYED_SUFFIX       Suffix for the undeployed group (default: " - Undeployed")
 """
 
 import hashlib

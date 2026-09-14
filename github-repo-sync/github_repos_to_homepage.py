@@ -292,6 +292,96 @@ def search_icon_libraries(candidate, language):
     return github_fallback_icon(language)
 
 
+DOCKHAND_TIMEOUT = 10
+
+
+def normalize_repo_url(url):
+    """Canonicalize a git URL for comparison: strip protocol, 'www.',
+    trailing slash, and a trailing '.git' suffix, and lowercase - so
+    'https://github.com/x/Y.git' and 'github.com/x/y/' compare equal."""
+    if not url:
+        return None
+    u = url.strip().lower()
+    u = re.sub(r"^git@([^:]+):", r"\1/", u)
+    u = re.sub(r"^https?://(www\.)?", "", u)
+    u = u.rstrip("/")
+    if u.endswith(".git"):
+        u = u[: -len(".git")]
+    return u
+
+
+def fetch_dockhand_git_repo_urls(dockhand_url, token, repos_path, url_alias_map=None):
+    """Fetch Dockhand's registered git repositories (/api/git/repositories)
+    and return the set of normalized source URLs - one per repo Dockhand
+    knows about as a git-backed stack, regardless of whether that stack is
+    currently running. `url_alias_map` lets a repo be matched via a URL
+    override (e.g. a renamed repo) instead of - or in addition to - its own
+    html_url; see --dockhand-url-alias-map."""
+    headers = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    url = dockhand_url.rstrip("/") + repos_path
+    try:
+        resp = requests.get(url, headers=headers, timeout=DOCKHAND_TIMEOUT)
+        resp.raise_for_status()
+        payload = resp.json()
+    except requests.RequestException as e:
+        print(f"ERROR: couldn't reach Dockhand at {url}: {e}", file=sys.stderr)
+        sys.exit(1)
+    except ValueError:
+        print(f"ERROR: Dockhand response from {url} wasn't valid JSON.", file=sys.stderr)
+        sys.exit(1)
+
+    entries = payload
+    if isinstance(entries, dict):
+        # some APIs wrap the list, e.g. {"repositories": [...]} or {"data": [...]}
+        for key in ("repositories", "data", "items", "results"):
+            if isinstance(entries.get(key), list):
+                entries = entries[key]
+                break
+
+    if not isinstance(entries, list):
+        print(
+            f"ERROR: unexpected response shape from {url} - expected a list of git repositories. "
+            f"Got: {type(payload).__name__}.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    urls = set()
+    skipped = 0
+    for entry in entries:
+        if isinstance(entry, dict) and isinstance(entry.get("url"), str) and entry["url"]:
+            urls.add(normalize_repo_url(entry["url"]))
+        else:
+            skipped += 1
+
+    if skipped:
+        print(
+            f"Note: {skipped} Dockhand git-repository entr{'y' if skipped == 1 else 'ies'} had no "
+            f"'url' field and were skipped.",
+            file=sys.stderr,
+        )
+
+    return urls
+
+
+def repo_is_deployed(repo, deployed_urls, url_alias_map=None):
+    """A repo counts as deployed if its own GitHub URL is registered in
+    Dockhand, or - for repos whose Dockhand-registered URL differs from
+    their current GitHub URL (e.g. a rename) - if its --dockhand-url-alias-map
+    override is."""
+    if normalize_repo_url(repo["html_url"]) in deployed_urls:
+        return True
+    if url_alias_map:
+        alias = url_alias_map.get(repo["name"].lower())
+        if alias and normalize_repo_url(alias) in deployed_urls:
+            return True
+    return False
+
+
+
 def fetch_all_repos(owner, token, is_org, include_forks, include_archived, include_private):
     """Paginate through the GitHub API and return the full repo list."""
     headers = {"Accept": "application/vnd.github+json"}
@@ -365,11 +455,13 @@ def resolve_icon(repo_name, language, icon_overrides, skip_verification=False):
     return github_fallback_icon(language)
 
 
-def build_entry(repo, show_stars, icon_overrides=None, skip_icon_verification=False):
+def build_entry(repo, show_stars, icon_overrides=None, skip_icon_verification=False, status_label=None):
     description = repo.get("description") or "No description"
     if show_stars:
         stars = repo.get("stargazers_count", 0)
         description = f"{description} · \u2605 {stars}"
+    if status_label:
+        description = f"{status_label} {description}"
 
     icon = resolve_icon(repo["name"], repo.get("language"), icon_overrides, skip_icon_verification)
 
@@ -429,11 +521,14 @@ def upsert_group(data, group_name, entries):
     return data
 
 
-def load_icon_overrides(path):
+def load_name_map(path, flag_name, value_desc):
+    """Load a flat {key: value} JSON/YAML mapping file, lowercasing keys.
+    Used for both --icon-map (repo -> icon) and --stack-alias-map
+    (repo -> Dockhand stack name), which share the same simple shape."""
     if not path:
         return {}
     if not os.path.exists(path):
-        print(f"ERROR: --icon-map file not found: {path}", file=sys.stderr)
+        print(f"ERROR: --{flag_name} file not found: {path}", file=sys.stderr)
         sys.exit(1)
 
     yaml = YAML(typ="safe")
@@ -441,8 +536,8 @@ def load_icon_overrides(path):
         raw = yaml.load(f) or {}
 
     if not isinstance(raw, dict):
-        print(f"ERROR: --icon-map file must contain a flat mapping of repo_name: icon, got {type(raw).__name__}",
-              file=sys.stderr)
+        print(f"ERROR: --{flag_name} file must contain a flat mapping of repo_name: {value_desc}, "
+              f"got {type(raw).__name__}", file=sys.stderr)
         sys.exit(1)
 
     return {str(k).lower(): str(v) for k, v in raw.items()}
@@ -474,6 +569,24 @@ def main():
                          "the machine running this script can't reach those CDNs but your browser can - "
                          "otherwise every icon will look 'missing' here even though it would render fine.")
     p.add_argument("--dry-run", action="store_true", help="Print the resulting YAML instead of writing to --config")
+    p.add_argument("--dockhand-url", default=os.environ.get("DOCKHAND_URL"),
+                    help="Base URL of your Dockhand instance, e.g. https://dockhand.example.com "
+                         "(or set DOCKHAND_URL env var). When set, repos are split into two groups - "
+                         "one for repos registered as a git repository in Dockhand (deployed), one for "
+                         "repos that aren't (undeployed) - instead of a single --group.")
+    p.add_argument("--dockhand-token", default=os.environ.get("DOCKHAND_TOKEN"),
+                    help="Dockhand API token (or set DOCKHAND_TOKEN env var)")
+    p.add_argument("--dockhand-repos-path", default=os.environ.get("DOCKHAND_REPOS_PATH", "/api/git/repositories"),
+                    help="API path appended to --dockhand-url that returns Dockhand's registered git "
+                         "repositories, each with a 'url' field (default: /api/git/repositories)")
+    p.add_argument("--dockhand-url-alias-map", default=os.environ.get("DOCKHAND_URL_ALIAS_MAP"),
+                    help="Path to a JSON or YAML file of {repo_name: git_url} overrides, for repos whose "
+                         "current GitHub URL doesn't match what's registered in Dockhand (e.g. after a "
+                         "repo rename). Repo name matching is case-insensitive.")
+    p.add_argument("--deployed-suffix", default=os.environ.get("DEPLOYED_SUFFIX", " - Deployed"),
+                    help="Suffix appended to --group for the deployed-repos group (default: ' - Deployed')")
+    p.add_argument("--undeployed-suffix", default=os.environ.get("UNDEPLOYED_SUFFIX", " - Undeployed"),
+                    help="Suffix appended to --group for the undeployed-repos group (default: ' - Undeployed')")
     args = p.parse_args()
 
     if os.sep in args.group or args.group.lower().endswith((".yaml", ".yml")):
@@ -488,7 +601,8 @@ def main():
     if args.include_private and not args.token:
         print("Warning: --include-private has no effect without --token", file=sys.stderr)
 
-    icon_overrides = load_icon_overrides(args.icon_map)
+    icon_overrides = load_name_map(args.icon_map, "icon-map", "icon")
+    url_alias_map = load_name_map(args.dockhand_url_alias_map, "dockhand-url-alias-map", "git_url")
 
     repos = fetch_all_repos(
         owner=args.user,
@@ -508,10 +622,43 @@ def main():
         print("No repositories found matching the given filters — leaving config untouched.", file=sys.stderr)
         sys.exit(1)
 
-    entries = [build_entry(r, args.show_stars, icon_overrides, args.skip_icon_verification) for r in repos]
+    use_dockhand = bool(args.dockhand_url)
 
-    if args.show_total:
-        entries.insert(0, build_total_entry(args.user, total_count, len(repos)))
+    if use_dockhand:
+        deployed_urls = fetch_dockhand_git_repo_urls(args.dockhand_url, args.dockhand_token, args.dockhand_repos_path)
+
+        deployed_repos, undeployed_repos = [], []
+        for r in repos:
+            bucket = deployed_repos if repo_is_deployed(r, deployed_urls, url_alias_map) else undeployed_repos
+            bucket.append(r)
+
+        unmatched = deployed_urls - {normalize_repo_url(r["html_url"]) for r in deployed_repos}
+        if unmatched:
+            print(
+                f"Note: {len(unmatched)} Dockhand git repositor{'y' if len(unmatched) == 1 else 'ies'} "
+                f"didn't match any of your GitHub repos ({', '.join(sorted(unmatched))}) - likely a "
+                f"private/forked/renamed repo not visible with the current --user/--token/--include-* flags.",
+                file=sys.stderr,
+            )
+
+        deployed_entries = [
+            build_entry(r, args.show_stars, icon_overrides, args.skip_icon_verification, status_label="\U0001F7E2")
+            for r in deployed_repos
+        ]
+        undeployed_entries = [
+            build_entry(r, args.show_stars, icon_overrides, args.skip_icon_verification, status_label="\U0001F534")
+            for r in undeployed_repos
+        ]
+
+        if args.show_total:
+            deployed_entries.insert(0, build_total_entry(args.user, len(deployed_repos), len(deployed_repos)))
+            undeployed_entries.insert(0, build_total_entry(args.user, len(undeployed_repos), len(undeployed_repos)))
+
+        entries = deployed_entries + undeployed_entries  # only used for the "no repos" guard below
+    else:
+        entries = [build_entry(r, args.show_stars, icon_overrides, args.skip_icon_verification) for r in repos]
+        if args.show_total:
+            entries.insert(0, build_total_entry(args.user, total_count, len(repos)))
 
     if not args.skip_icon_verification:
         missing = icon_verification_stats["confirmed_missing"]
@@ -535,7 +682,14 @@ def main():
         sys.exit(1)
 
     yaml, data = load_or_create_config(args.config)
-    data = upsert_group(data, args.group, entries)
+
+    if use_dockhand:
+        deployed_group = args.group + args.deployed_suffix
+        undeployed_group = args.group + args.undeployed_suffix
+        data = upsert_group(data, deployed_group, deployed_entries)
+        data = upsert_group(data, undeployed_group, undeployed_entries)
+    else:
+        data = upsert_group(data, args.group, entries)
 
     if args.dry_run:
         yaml.dump(data, sys.stdout)
@@ -549,8 +703,13 @@ def main():
     os.replace(tmp_path, args.config)
 
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-    print(f"[{ts}] Wrote {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
-          f"({total_count} repo(s) total) to group '{args.group}' in {args.config}")
+    if use_dockhand:
+        print(f"[{ts}] Wrote {len(deployed_entries)} deployed / {len(undeployed_entries)} undeployed "
+              f"repo(s) ({total_count} repo(s) total) to groups '{deployed_group}' / '{undeployed_group}' "
+              f"in {args.config}")
+    else:
+        print(f"[{ts}] Wrote {len(entries)} entr{'y' if len(entries) == 1 else 'ies'} "
+              f"({total_count} repo(s) total) to group '{args.group}' in {args.config}")
 
 
 if __name__ == "__main__":
