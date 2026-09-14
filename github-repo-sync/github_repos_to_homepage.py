@@ -36,6 +36,7 @@ want private repos included too (and pass --include-private).
 """
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -598,6 +599,10 @@ def main():
                     help="Suffix appended to --group for the deployed-repos group (default: ' - Deployed')")
     p.add_argument("--undeployed-suffix", default=os.environ.get("UNDEPLOYED_SUFFIX", " - Undeployed"),
                     help="Suffix appended to --group for the undeployed-repos group (default: ' - Undeployed')")
+    p.add_argument("--stats-file", default=os.environ.get("STATS_FILE"),
+                    help="Path to write a small {deployed, undeployed, total, updated_at} JSON stats file "
+                         "(default: repo-stats.json next to --config). Served by webhook_server.py's "
+                         "GET /stats for a Homepage customapi widget.")
     args = p.parse_args()
 
     if os.sep in args.group or args.group.lower().endswith((".yaml", ".yml")):
@@ -718,6 +723,21 @@ def main():
     print(f"[{ts}] Wrote {len(deployed_entries)} deployed / {len(undeployed_entries)} undeployed "
           f"repo(s) ({total_count} repo(s) total) to groups '{deployed_group}' / '{undeployed_group}' "
           f"in {args.config}{stale_note}")
+
+    # Also drop a tiny stats file alongside services.yaml so a Homepage
+    # customapi widget can show live deployed/undeployed counts (see
+    # webhook_server.py's GET /stats, which just serves this file).
+    stats_path = args.stats_file or os.path.join(config_dir, "repo-stats.json")
+    stats = {
+        "deployed": len(deployed_repos),
+        "undeployed": len(undeployed_repos),
+        "total": total_count,
+        "updated_at": ts,
+    }
+    stats_tmp = stats_path + ".tmp"
+    with open(stats_tmp, "w") as f:
+        json.dump(stats, f)
+    os.replace(stats_tmp, stats_path)
 
 
 if __name__ == "__main__":

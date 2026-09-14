@@ -37,6 +37,10 @@ Optional env vars:
                           registered in Dockhand (e.g. after a rename)
   DEPLOYED_SUFFIX         Suffix for the deployed group (default: " - Deployed")
   UNDEPLOYED_SUFFIX       Suffix for the undeployed group (default: " - Undeployed")
+  STATS_FILE              Path to the {deployed, undeployed, total, updated_at}
+                          JSON stats file written each sync (default:
+                          repo-stats.json next to HOMEPAGE_CONFIG). Served at
+                          GET /stats for a Homepage customapi widget.
 """
 
 import hashlib
@@ -56,6 +60,7 @@ SYNC_INTERVAL_SECS = int(os.environ.get("SYNC_INTERVAL_SECS", "3600"))
 EXTRA_ARGS = os.environ.get("EXTRA_ARGS", "--show-stars --sort updated").split()
 WEBHOOK_PORT = int(os.environ.get("WEBHOOK_PORT", "8000"))
 WEBHOOK_SECRET = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+STATS_FILE = os.environ.get("STATS_FILE", os.path.join(os.path.dirname(HOMEPAGE_CONFIG), "repo-stats.json"))
 
 # Events that mean "the repo list changed and should be re-synced"
 REPO_LIST_CHANGING_ACTIONS = {
@@ -115,8 +120,25 @@ class WebhookHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             self._respond(200, b"ok")
+        elif self.path == "/stats":
+            self._handle_stats()
         else:
             self._respond(404, b"not found")
+
+    def _handle_stats(self):
+        try:
+            with open(STATS_FILE, "rb") as f:
+                body = f.read()
+        except FileNotFoundError:
+            # No sync has completed yet - return zeroed stats rather than a
+            # 404/500, so a Homepage widget hitting this early just shows 0s
+            # instead of an error state.
+            body = json.dumps({"deployed": 0, "undeployed": 0, "total": 0, "updated_at": None}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):
         if self.path != "/webhook":
@@ -171,7 +193,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
 def main():
     threading.Thread(target=sync_loop, daemon=True).start()
     server = ThreadingHTTPServer(("0.0.0.0", WEBHOOK_PORT), WebhookHandler)
-    log(f"webhook listener up on :{WEBHOOK_PORT} (POST /webhook, GET /health)")
+    log(f"webhook listener up on :{WEBHOOK_PORT} (POST /webhook, GET /health, GET /stats)")
     server.serve_forever()
 
 
