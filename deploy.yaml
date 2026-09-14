@@ -53,7 +53,7 @@ services:
       # one flat "Repo List" group, based on whether a Dockhand git-stack
       # points at each repo.
       DOCKHAND_URL: https://dockhand.ashish-syn-nas.synology.me
-      DOCKHAND_TOKEN: ${DOCKHAND_TOKEN-git}
+      DOCKHAND_TOKEN: ${gitsync}
       # DOCKHAND_REPOS_PATH: /api/git/repositories     # uncomment + adjust if your API path differs
       # DOCKHAND_URL_ALIAS_MAP: /config/dockhand-url-aliases.json   # only needed if a repo's current
                                                           # GitHub URL differs from what's registered
