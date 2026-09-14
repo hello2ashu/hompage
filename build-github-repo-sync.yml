@@ -43,3 +43,14 @@ jobs:
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Trigger Dockhand redeploy
+        # DOCKHAND_WEBHOOK_URL and DOCKHAND_WEBHOOK_TOKEN are repo secrets -
+        # get the real URL + token from Dockhand's UI: open the "homepage"
+        # stack -> Webhook tab -> Generate/copy. Do not hand-construct this
+        # URL from guesswork; use exactly what Dockhand's UI gives you.
+        run: |
+          curl -sf -X POST "${{ secrets.DOCKHAND_WEBHOOK_URL }}" \
+            -H "Authorization: Bearer ${{ secrets.DOCKHAND_WEBHOOK_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{"pull": true, "forceRecreate": true}'
