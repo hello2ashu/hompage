@@ -1,6 +1,4 @@
-
-
-    services:
+services:
   homepage:
     container_name: Homepage
     image: gethomepage/homepage:latest
@@ -11,6 +9,8 @@
 
     environment:
       HOMEPAGE_ALLOWED_HOSTS: 192.168.189.40:3550,homepage.ashish-syn-nas.synology.me
+      NEXTAUTH_URL=https://homepage.ashish-syn-nas.synology.me
+      NEXTAUTH_URL_INTERNAL=http://localhost:3000
       PUID: 1026
       PGID: 100
       HOMEPAGE_AUTH_ENABLED: true
