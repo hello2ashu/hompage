@@ -27,6 +27,12 @@ services:
       - /volume1/docker/homepage/public:/app/public/images:rw
       - /var/run/docker.sock:/var/run/docker.sock
 
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
     restart: on-failure:5
 
     networks:
@@ -63,7 +69,13 @@ services:
     volumes:
       - /volume1/docker/homepage:/config
 
+    mem_limit: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
 networks:
   bookorbit-deploy_default:
     external: true
-
