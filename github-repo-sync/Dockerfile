@@ -4,6 +4,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends gosu \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/sbin/gosu /usr/local/bin/su-exec
 
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    TZ=America/Los_Angeles
+
 WORKDIR /app
 
 COPY requirements.txt ./
