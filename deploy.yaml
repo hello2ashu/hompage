@@ -25,6 +25,7 @@ services:
       HOMEPAGE_VAR_SYNOLOGY_PASSWORD: ${SYNOLOGY_PASSWORD}
     ports:
       - 3550:3000
+      - "192.168.189.40:7681:7681"
     volumes:
       - /volume1/docker/homepage:/app/config:rw
       - /volume1/docker/homepage/public:/app/public/images:rw
