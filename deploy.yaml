@@ -50,3 +50,16 @@ services:
 networks:
   bookorbit-deploy_default:
     external: true
+nas-ssh:
+  image: tsl0922/ttyd:latest
+  container_name: nas-ssh
+  restart: unless-stopped
+  volumes:
+    - /volume1/docker/nas-ssh/keys:/keys:ro   # mount a private key, read-only
+  command: >
+    ttyd -p 7681
+          -c ${TTYD_USER}:${TTYD_PASS}
+          -t titleFixed="NAS"
+          ssh -i /keys/id_ed25519 -o StrictHostKeyChecking=yes homeuser@nas-host
+    networks:
+      - default
