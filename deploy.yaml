@@ -67,6 +67,8 @@ services:
        - --ping-interval
        - "30"
        - ssh
+       - p
+       - "4232"
        - -i
        - /keys/id_ed25519
        - -o
