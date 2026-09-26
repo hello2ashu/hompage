@@ -1,36 +1,79 @@
+# github-repo-sync was merged into the stats-proxy container (BookOrbit stack).
+# Homepage still joins bookorbit-deploy_default so it can reach http://stats-proxy:4321.
+
 services:
   homepage:
-    # ...unchanged, as you have it...
-
-  nas-ssh:
-    image: tsl0922/ttyd:latest
-    container_name: nas-ssh
-    restart: unless-stopped
+    container_name: Homepage
+    image: gethomepage/homepage:latest
+    mem_limit: 4g
+    cpu_shares: 768
     security_opt:
       - no-new-privileges:true
-    ports:
-      - "127.0.0.1:7681:7681"   # bind to loopback only — DSM's reverse proxy runs on the host
-    volumes:
-      - /volume1/docker/nas-ssh/keys:/keys:ro
-    command:
-      - ttyd
-      - -p
-      - "7681"
-      - -c
-      - "${TTYD_USER}:${TTYD_PASS}"
-      - -t
-      - titleFixed=NAS
-      - --ping-interval
-      - "30"
-      - ssh
-      - -i
-      - /keys/id_ed25519
-      - -o
-      - UserKnownHostsFile=/keys/known_hosts
-      - -o
-      - StrictHostKeyChecking=yes
-      - homeuser@nas-host
 
+    environment:
+      HOMEPAGE_ALLOWED_HOSTS: 192.168.189.40:3550,homepage.ashish-syn-nas.synology.me
+      NEXTAUTH_URL: https://homepage.ashish-syn-nas.synology.me
+      NEXTAUTH_URL_INTERNAL: http://localhost:3000
+      PUID: 1026
+      PGID: 100
+      HOMEPAGE_AUTH_ENABLED: true
+      HOMEPAGE_AUTH_SECRET: ${homepagesecret}
+      HOMEPAGE_EXTERNAL_URL: https://homepage.ashish-syn-nas.synology.me
+      HOMEPAGE_AUTH_PASSWORD: ${homepagepass}
+      TZ: America/Los_Angeles
+      HOMEPAGE_VAR_TRILIUM_KEY: ${TRILIUM_TOKEN}
+      HOMEPAGE_VAR_LINKWARDEN_KEY: ${LINKWARDEN_TOKEN}
+      HOMEPAGE_VAR_KARAKEEP_KEY: ${KARAKEEP_API_KEY}
+      HOMEPAGE_VAR_DOCKHAND_PASSWORD: ${DOCKHAND_PASSWORD}
+      HOMEPAGE_VAR_DOCKHAND_API_KEY: ${DOCKHAND_API_KEY}
+      HOMEPAGE_VAR_SYNOLOGY_PASSWORD: ${SYNOLOGY_PASSWORD}
+    ports:
+      - 3550:3000
+
+    volumes:
+      - /volume1/docker/homepage:/app/config:rw
+      - /volume1/docker/homepage/public:/app/public/images:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+    restart: on-failure:5
+
+    networks:
+      - default
+      - bookorbit-deploy_default
+   nas-ssh:
+     image: tsl0922/ttyd:latest
+     container_name: nas-ssh
+     restart: unless-stopped
+     security_opt:
+       - no-new-privileges:true
+     ports:
+       - "127.0.0.1:7681:7681"   # bind to loopback only — DSM's reverse proxy runs on the host
+     volumes:
+       - /volume1/docker/nas-ssh/keys:/keys:ro
+     command:
+       - ttyd
+       - -p
+       - "7681"
+       - -c
+       - "${TTYD_USER}:${TTYD_PASS}"
+       - -t
+       - titleFixed=NAS
+       - --ping-interval
+       - "30"
+       - ssh
+       - -i
+       - /keys/id_ed25519
+       - -o
+       - UserKnownHostsFile=/keys/known_hosts
+       - -o
+       - StrictHostKeyChecking=yes
+       - homeuser@nas-host
 networks:
   bookorbit-deploy_default:
     external: true
