@@ -55,8 +55,8 @@ services:
       - "7681"
       - -c
       - "${TTYD_USER}:${TTYD_PASS}"
-      - -t
       - --writable
+      - -t
       - titleFixed=NAS
       - --ping-interval
       - "30"
