@@ -61,7 +61,7 @@ services:
       - --ping-interval
       - "30"
       - ssh
-      - tt
+      - -tt
       - -p
       - "4232"
       - -i
