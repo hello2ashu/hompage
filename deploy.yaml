@@ -68,7 +68,7 @@ services:
       - UserKnownHostsFile=/keys/known_hosts
       - -o
       - StrictHostKeyChecking=yes
-      - "${NAS-SSH}"
+      - "${nasssh}"
 
 networks:
   bookorbit-deploy_default:
