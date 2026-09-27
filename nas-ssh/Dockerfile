@@ -5,4 +5,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssh-client 
     wget \
     openssh-client \
     iputils-ping \
+    dnsutils \
+    traceroute \
     && rm -rf /var/lib/apt/lists/*
