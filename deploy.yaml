@@ -73,6 +73,6 @@ services:
       - "${nasssh}"
 
 networks:
-default: {}
+  default: {}
   bookorbit-deploy_default:
     external: true
