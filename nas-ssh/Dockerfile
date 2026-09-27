@@ -1,2 +1,3 @@
 FROM tsl0922/ttyd:latest
-RUN apk add --no-cache openssh-client
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client \
+    && rm -rf /var/lib/apt/lists/*
