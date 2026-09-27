@@ -40,7 +40,7 @@ services:
       - bookorbit-deploy_default
 
   nas-ssh:
-    image: tsl0922/ttyd:latest
+    image: ghcr.io/hello2ashu/nas-ssh:latest
     container_name: nas-ssh
     restart: unless-stopped
     security_opt:
