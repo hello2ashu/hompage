@@ -45,11 +45,13 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    network_mode: bridge
+    environment:
+      TZ: America/Los_Angeles
     ports:
-       - "192.168.189.40:7681:7681"
+      - "192.168.189.40:7681:7681"
     volumes:
       - /volume1/docker/nas-ssh/keys:/keys:ro
-      - /volume1/docker/nas-ssh/.bash_history:/root/.bash_history
     command:
       - ttyd
       - -p
