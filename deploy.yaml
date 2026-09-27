@@ -68,7 +68,7 @@ services:
       - UserKnownHostsFile=/keys/known_hosts
       - -o
       - StrictHostKeyChecking=yes
-      - ashish@ashish-syn-nas.synology.me
+      - ashish@192.168.189.40
 
 networks:
   bookorbit-deploy_default:
