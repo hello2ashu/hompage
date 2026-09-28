@@ -8,4 +8,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssh-client 
     dnsutils \
     traceroute \
     iproute2 \
+    etcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
