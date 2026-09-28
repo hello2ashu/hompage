@@ -40,9 +40,8 @@ services:
       - bookorbit-deploy_default
 
   nas-ssh:
-    nas-ssh:
     image: ghcr.io/hello2ashu/nas-ssh:latest
-    container_name: nasssh
+    container_name: nas-ssh
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
