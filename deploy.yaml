@@ -40,40 +40,22 @@ services:
       - bookorbit-deploy_default
 
   nas-ssh:
+    nas-ssh:
     image: ghcr.io/hello2ashu/nas-ssh:latest
     container_name: nas-ssh
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     network_mode: bridge
-    environment:
-      TZ: America/Los_Angeles
     ports:
-      - "192.168.189.40:7681:7681"
+      - "${nasssh}"
+    environment:
+      TTYD_USER: ${TTYD_USER}
+      TTYD_PASS: ${TTYD_PASS}
+      SSH_USER: ashish
+      SSH_PORT: "4232"
     volumes:
       - /volume1/docker/nas-ssh/keys:/keys:ro
-    command:
-      - ttyd
-      - -p
-      - "7681"
-      - -c
-      - "${TTYD_USER}:${TTYD_PASS}"
-      - --writable
-      - -t
-      - titleFixed=NAS
-      - --ping-interval
-      - "30"
-      - ssh
-      - -tt
-      - -p
-      - "22"
-      - -i
-      - /keys/id_ed25519
-      - -o
-      - UserKnownHostsFile=/keys/known_hosts
-      - -o
-      - StrictHostKeyChecking=yes
-      - "${nasssh}"
 
 networks:
   default: {}
