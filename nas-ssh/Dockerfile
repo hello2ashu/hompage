@@ -7,4 +7,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssh-client 
     iputils-ping \
     dnsutils \
     traceroute \
+    iproute2 \
     && rm -rf /var/lib/apt/lists/*
