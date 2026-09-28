@@ -93,7 +93,7 @@ jobs:
             --output /tmp/dockhand-response.txt \
             --write-out "%{http_code}" \
             --request POST \
-            "$DOCKHAND_WEBHOOK_URL" \
+            "$DOCKHAND_NASSSH_WEBHOOK_URL" \
             --header "Content-Type: application/json" \
             --header "X-GitHub-Event: push" \
             --header "X-Hub-Signature-256: $SIGNATURE" \
