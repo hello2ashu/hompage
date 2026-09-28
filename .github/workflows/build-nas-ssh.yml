@@ -72,7 +72,7 @@ jobs:
       - name: Notify Dockhand
         if: success()
         env:
-          DOCKHAND_WEBHOOK_URL: ${{ secrets.DOCKHAND_NASSSH_WEBHOOK_SECRET }}
+          DOCKHAND_WEBHOOK_URL: ${{ secrets.DOCKHAND_NASSSH_WEBHOOK_URL }}
           DOCKHAND_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_NASSSH_WEBHOOK_SECRET }}
 
         run: |
