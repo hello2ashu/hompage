@@ -72,8 +72,8 @@ jobs:
       - name: Notify Dockhand
         if: success()
         env:
-          DOCKHAND_WEBHOOK_URL: ${{ secrets.DOCKHAND_NASSSH_WEBHOOK_URL }}
-          DOCKHAND_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_NASSSH_WEBHOOK_SECRET }}
+          DOCKHAND_NASSSH_WEBHOOK_URL: ${{ secrets.DOCKHAND_NASSSH_WEBHOOK_URL }}
+          DOCKHAND_NASSSH_WEBHOOK_SECRET: ${{ secrets.DOCKHAND_NASSSH_WEBHOOK_SECRET }}
 
         run: |
           set -euo pipefail
@@ -82,7 +82,7 @@ jobs:
 
           SIGNATURE="sha256=$(printf '%s' "$PAYLOAD" \
             | openssl dgst -sha256 \
-            -hmac "$DOCKHAND_WEBHOOK_SECRET" \
+            -hmac "$DOCKHAND_NASSSH_WEBHOOK_SECRET" \
             | awk '{print $NF}')"
 
           echo "Triggering Dockhand deployment..."
