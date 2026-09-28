@@ -66,7 +66,7 @@ services:
       - ssh
       - -tt
       - -p
-      - "4232"
+      - "22"
       - -i
       - /keys/id_ed25519
       - -o
