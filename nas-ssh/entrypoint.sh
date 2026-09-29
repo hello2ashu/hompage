@@ -12,12 +12,19 @@ fi
 echo "[entrypoint] Using NAS host IP: $GATEWAY_IP"
 
 SSH_PORT="${SSH_PORT:-22}"
-SSH_USER="${SSH_USER:-ashish}"
+SSH_USER="${SSH_USER:-homeuser}"
 KNOWN_HOSTS=/tmp/known_hosts
 
 # Scan the host key fresh each start against whatever the gateway IP
 # turns out to be right now — no stale known_hosts file to maintain.
-ssh-keyscan -p "$SSH_PORT" "$GATEWAY_IP" > "$KNOWN_HOSTS" 2>/dev/null
+ssh-keyscan -T 5 -p "$SSH_PORT" "$GATEWAY_IP" > "$KNOWN_HOSTS" 2>/tmp/keyscan.err || true
+
+if [ ! -s "$KNOWN_HOSTS" ]; then
+  echo "[entrypoint] ERROR: no host key from $GATEWAY_IP:$SSH_PORT" >&2
+  cat /tmp/keyscan.err >&2
+  echo "[entrypoint] Check that sshd is running and the firewall allows this Docker subnet" >&2
+  exit 1
+fi
 
 exec ttyd \
   -p 7681 \
