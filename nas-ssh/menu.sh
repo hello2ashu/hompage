@@ -30,7 +30,7 @@ load_nodes() {
 connect() {
   local i=$1
   echo
-  echo ">> ${users[$i]}@${hosts[$i]}:${ports[$i]}"
+  echo "${DIM}Connecting to ${names[$i]}...${R}"
   ssh -tt -p "${ports[$i]}" -i "${keys[$i]}" \
       -o UserKnownHostsFile="$KNOWN_MAIN $KNOWN_GW" \
       -o StrictHostKeyChecking=accept-new \
@@ -54,8 +54,7 @@ while true; do
   printf "%s\n" "${B}${MAG}  ╰──────────────────────────────────────────────╯${R}"
   echo
   for i in "${!names[@]}"; do
-    printf "  ${B}${YEL}%2d${R}${DIM})${R} ${B}${GRN}%-14s${R} ${CYN}%s${R}${DIM}@${R}${BLU}%s${R}${DIM}:%s${R}\n" \
-      "$((i+1))" "${names[$i]}" "${users[$i]}" "${hosts[$i]}" "${ports[$i]}"
+    printf "  ${B}${YEL}%2d${R}${DIM})${R} ${B}${GRN}%s${R}\n" "$((i+1))" "${names[$i]}"
   done
   echo
   printf "  ${B}${YEL} c${R}${DIM})${R} ${MAG}custom${R} ${DIM}(user@host[:port])${R}\n"
