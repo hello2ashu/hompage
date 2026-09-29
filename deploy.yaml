@@ -38,6 +38,7 @@ services:
     networks:
       - default
       - bookorbit-deploy_default
+
       
   nas-ssh:
     image: ghcr.io/hello2ashu/nas-ssh:latest
@@ -45,18 +46,17 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    network_mode: bridge
     ports:
       - "${nasssh}"
     environment:
-      extra_hosts:
-        host.docker.internal:host-gateway
       TTYD_USER: ${TTYD_USER}
       TTYD_PASS: ${TTYD_PASS}
       SSH_USER: homeuser
       SSH_PORT: "22"
       THEME: ${TTYD_THEME:-dracula}      # dracula | nord | tokyo-night | catppuccin | gruvbox | solarized | default
       FONT_SIZE: "15"
+      LOG_DAYS: "30"                     # keep session recordings this many days
+      TZ: America/Los_Angeles            # timestamps in the log/menu (needs tzdata in the image)
     volumes:
       - /volume1/docker/nas-ssh/keys:/keys:ro
       - /volume1/docker/nas-ssh/nodes.conf:/config/nodes.conf:ro
