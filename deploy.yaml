@@ -52,7 +52,7 @@ services:
       TTYD_USER: ${TTYD_USER}
       TTYD_PASS: ${TTYD_PASS}
       SSH_USER: ashish
-      SSH_PORT: "4232"
+      SSH_PORT: "22"
     volumes:
       - /volume1/docker/nas-ssh/keys:/keys:ro
 
