@@ -49,6 +49,8 @@ services:
     ports:
       - "${nasssh}"
     environment:
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
       TTYD_USER: ${TTYD_USER}
       TTYD_PASS: ${TTYD_PASS}
       SSH_USER: ashish
