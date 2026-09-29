@@ -39,7 +39,6 @@ services:
       - default
       - bookorbit-deploy_default
 
-      
   nas-ssh:
     image: ghcr.io/hello2ashu/nas-ssh:latest
     container_name: nas-ssh
@@ -55,13 +54,17 @@ services:
       SSH_PORT: "22"
       THEME: ${TTYD_THEME:-dracula}      # dracula | nord | tokyo-night | catppuccin | gruvbox | solarized | default
       FONT_SIZE: "15"
+      # Start screen. Set TTYD_START_MODE=shell in .env (or leave the default below):
+      #   shell = terminal with custom prompt first (type "menu" or "go <node>")
+      #   menu  = node picker first
+      START_MODE: ${TTYD_START_MODE:-shell}
       LOG_DAYS: "30"                     # keep session recordings this many days
       TZ: America/Los_Angeles            # timestamps in the log/menu (needs tzdata in the image)
     volumes:
       - /volume1/docker/nas-ssh/keys:/keys:ro
       - /volume1/docker/nas-ssh/nodes.conf:/config/nodes.conf:ro
       - /volume1/docker/nas-ssh/state:/state
-
+       
 networks:
   default: {}
   bookorbit-deploy_default:

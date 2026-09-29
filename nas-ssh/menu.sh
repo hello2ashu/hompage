@@ -7,6 +7,8 @@
 
 umask 077
 
+SELF="$(readlink -f "$0")"
+
 CONF="${NODES_FILE:-/config/nodes.conf}"
 GATEWAY_IP=$(ip route show default | awk '/default/ {print $3; exit}')
 DEF_USER="${SSH_USER:-homeuser}"
@@ -80,7 +82,29 @@ connect() {
   rc=$?
   log "$n" end "exit=$rc duration=$((SECONDS-t0))s"
   echo
-  read -rsn1 -p "Session ended (exit code $rc). Press any key for menu..."
+  [ -n "$NOPAUSE" ] || read -rsn1 -p "Session ended (exit code $rc). Press any key for menu..."
+}
+
+# Shell with a custom prompt. Type "menu" to open the node picker, or
+# "go <node>" to connect directly. Exiting the shell returns here.
+run_shell() {
+  local rc=/tmp/nas-ssh.bashrc
+  cat > "$rc" <<'RCEOF'
+alias ls='ls --color=auto'; alias ll='ls -lah --color=auto'; alias grep='grep --color=auto'
+menu() { IN_TTY_SHELL=1 bash "$MENU_BIN"; }
+go()   { [ -z "$1" ] && { echo "usage: go <node>"; return 1; }; bash "$MENU_BIN" --go "$@"; }
+__pc() { local e=$?; if [ $e -eq 0 ]; then __ar=$'\e[92m'; else __ar=$'\e[91m'; fi; }
+PROMPT_COMMAND=__pc
+PS1='\[\e[1;95m\]nas-ssh\[\e[0m\] \[\e[96m\]\w\[\e[0m\]\n\[${__ar}\]❯\[\e[0m\] '
+printf '\e[1;95m  ╭─ NAS SSH TERMINAL ──────────────────╮\e[0m\n'
+printf '    \e[93mmenu\e[0m         open the node picker\n'
+printf '    \e[93mgo <node>\e[0m    connect directly (tab completes)\n'
+printf '    \e[93mexit\e[0m         back\n\n'
+RCEOF
+  printf 'complete -W "%s" go\n' "${names[*]}" >> "$rc"
+  log "terminal" start ""
+  MENU_BIN="$SELF" IN_TTY_SHELL=1 bash --rcfile "$rc" -i
+  log "terminal" end ""
 }
 
 show_file() {   # strip terminal escapes so the transcript is readable
@@ -118,6 +142,18 @@ view_logs() {
   done
 }
 
+if [ "$1" = "--go" ]; then
+  load_nodes; want="${2,,}"
+  for i in "${!names[@]}"; do
+    if [ "${names[$i]}" != "" ] && [ "${names[$i],,}" = "$want" ]; then NOPAUSE=1; connect "$i"; exit 0; fi
+  done
+  echo "unknown node: $2  (known: ${names[*]})"; exit 1
+fi
+
+if [ "$START_MODE" = "shell" ] && [ -z "$IN_TTY_SHELL" ]; then
+  load_nodes; run_shell; exit 0
+fi
+
 while true; do
   load_nodes; load_last
   clear
@@ -129,13 +165,17 @@ while true; do
   echo
   printf "  ${B}${YEL} l${R}${DIM})${R} ${MAG}activity log & recordings${R}\n"
   printf "  ${B}${YEL} c${R}${DIM})${R} ${MAG}custom${R} ${DIM}(user@host[:port])${R}\n"
-  printf "  ${B}${YEL} s${R}${DIM})${R} ${MAG}shell in this container${R}\n"
-  printf "  ${B}${RED} q${R}${DIM})${R} ${RED}quit${R}\n\n"
+  if [ -z "$IN_TTY_SHELL" ]; then
+    printf "  ${B}${YEL} t${R}${DIM})${R} ${MAG}terminal${R} ${DIM}(shell - type 'menu' or 'go <node>')${R}\n"
+    printf "  ${B}${RED} q${R}${DIM})${R} ${RED}quit${R}\n\n"
+  else
+    printf "  ${B}${RED} q${R}${DIM})${R} ${RED}back to shell${R}\n\n"
+  fi
   read -rp "  ${B}${CYN}❯${R} " ch
   case "$ch" in
     q|Q) exit 0 ;;
     l|L) view_logs ;;
-    s|S) log "container-shell" start ""; bash -l; log "container-shell" end "" ;;
+    t|T|s|S) [ -z "$IN_TTY_SHELL" ] && run_shell ;;
     c|C)
       read -rp "  user@host[:port]: " t
       [ -z "$t" ] && continue
