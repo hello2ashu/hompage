@@ -13,4 +13,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssh-client 
     && rm -rf /var/lib/apt/lists/*
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
+COPY menu.sh /menu.sh
+RUN chmod +x /menu.sh
 ENTRYPOINT ["/entrypoint.sh"]

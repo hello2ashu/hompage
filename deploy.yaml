@@ -38,7 +38,7 @@ services:
     networks:
       - default
       - bookorbit-deploy_default
-
+      
   nas-ssh:
     image: ghcr.io/hello2ashu/nas-ssh:latest
     container_name: nas-ssh
@@ -55,8 +55,12 @@ services:
       TTYD_PASS: ${TTYD_PASS}
       SSH_USER: homeuser
       SSH_PORT: "22"
+      THEME: ${TTYD_THEME:-dracula}      # dracula | nord | tokyo-night | catppuccin | gruvbox | solarized | default
+      FONT_SIZE: "15"
     volumes:
       - /volume1/docker/nas-ssh/keys:/keys:ro
+      - /volume1/docker/nas-ssh/nodes.conf:/config/nodes.conf:ro
+      - /volume1/docker/nas-ssh/state:/state
 
 networks:
   default: {}
