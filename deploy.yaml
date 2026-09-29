@@ -53,7 +53,7 @@ services:
         host.docker.internal:host-gateway
       TTYD_USER: ${TTYD_USER}
       TTYD_PASS: ${TTYD_PASS}
-      SSH_USER: ashish
+      SSH_USER: homeuser
       SSH_PORT: "22"
     volumes:
       - /volume1/docker/nas-ssh/keys:/keys:ro
