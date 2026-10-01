@@ -41,7 +41,7 @@ services:
 
   nas-ssh:
     image: ghcr.io/hello2ashu/nas-ssh:latest
-    container_name: 2.NAS.SSH
+    container_name: nas-ssh
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
